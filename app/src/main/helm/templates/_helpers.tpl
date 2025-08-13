@@ -33,7 +33,7 @@ Create chart name and version as used by the chart label.
 {{/*
 Common labels
 */}}
-{{- define "mcp-client.labels" -}}done
+{{- define "mcp-client.labels" -}}
 helm.sh/chart: {{ include "mcp-client.chart" . }}
 {{ include "mcp-client.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
@@ -45,7 +45,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "mcp-client.selectorLabels" -}}done
+{{- define "mcp-client.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "mcp-client.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: {{ include "mcp-client.fullname" . }}
