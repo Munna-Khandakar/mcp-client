@@ -4,6 +4,8 @@ import {
     Tool,
 } from "@anthropic-ai/sdk/resources/messages/messages.mjs";
 
+import OpenAI from "openai";
+
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
@@ -13,15 +15,20 @@ import cors from "cors";
 
 // Configuration constants - define all values here
 const ANTHROPIC_API_KEY = '';
+const OPENAI_API_KEY = '';
 const MCP_SERVER_URL = 'http://localhost:3078/mcp';
 const SERVER_PORT = 3077;
-const MODEL_NAME = 'claude-3-5-haiku-latest'
+const ANTHROPIC_MODEL = 'claude-3-5-haiku-latest';
+const OPENAI_MODEL = 'gpt-4o-mini';
+
+type ModelProvider = 'anthropic' | 'openai';
 
 interface SessionData {
     sessionId: string;
     mcpClient: MCPClient;
     createdAt: Date;
     lastActivity: Date;
+    provider: ModelProvider;
 }
 
 // Global session storage
@@ -29,19 +36,30 @@ const sessions = new Map<string, SessionData>();
 
 class MCPClient {
     private mcp: Client;
-    private anthropic: Anthropic;
+    private anthropic: Anthropic | null = null;
+    private openai: OpenAI | null = null;
     private transport: StreamableHTTPClientTransport | null = null;
     public tools: Tool[] = [];
     private apiToken: string;
-    private conversationHistory: MessageParam[] = [];
+    private conversationHistory: any[] = [];
     public sessionId: string | null = null;
+    private provider: ModelProvider;
 
-    constructor(apiToken: string) {
+    constructor(apiToken: string, provider: ModelProvider = 'anthropic') {
         this.apiToken = apiToken;
-        // Initialize Anthropic client and MCP client
-        this.anthropic = new Anthropic({
-            apiKey: ANTHROPIC_API_KEY,
-        });
+        this.provider = provider;
+        
+        // Initialize the appropriate client and MCP client
+        if (provider === 'anthropic') {
+            this.anthropic = new Anthropic({
+                apiKey: ANTHROPIC_API_KEY,
+            });
+        } else if (provider === 'openai') {
+            this.openai = new OpenAI({
+                apiKey: OPENAI_API_KEY,
+            });
+        }
+        
         this.mcp = new Client({name: "mcp-client-http", version: "1.0.0"});
     }
 
@@ -70,17 +88,35 @@ class MCPClient {
 
             // List available tools
             const toolsResult = await this.mcp.listTools();
-            this.tools = toolsResult.tools.map((tool) => {
-                return {
-                    name: tool.name,
-                    description: tool.description,
-                    input_schema: tool.inputSchema,
-                };
-            });
+            
+            // Convert MCP tools to format compatible with both Anthropic and OpenAI
+            if (this.provider === 'anthropic') {
+                this.tools = toolsResult.tools.map((tool) => {
+                    return {
+                        name: tool.name,
+                        description: tool.description,
+                        input_schema: tool.inputSchema,
+                    };
+                });
+            } else if (this.provider === 'openai') {
+                // OpenAI uses a different tool format
+                this.tools = toolsResult.tools.map((tool) => {
+                    return {
+                        type: "function",
+                        function: {
+                            name: tool.name,
+                            description: tool.description,
+                            parameters: tool.inputSchema,
+                        }
+                    };
+                }) as any[];
+            }
             
             console.log(
                 `Connected to MCP server with session ID: ${this.sessionId}`,
-                "Tools:", this.tools.map(({name}) => name)
+                "Tools:", this.tools.map((tool: any) => 
+                    this.provider === 'anthropic' ? tool.name : tool.function.name
+                )
             );
 
             return this.sessionId || "no-session";
@@ -92,11 +128,25 @@ class MCPClient {
 
     async processQuery(query: string) {
         /**
-         * Process a query using Claude and available tools while maintaining conversation history
+         * Process a query using the selected model provider and available tools while maintaining conversation history
          *
          * @param query - The user's input query
          * @returns Processed response as a string
          */
+        if (this.provider === 'anthropic') {
+            return this.processQueryWithAnthropic(query);
+        } else if (this.provider === 'openai') {
+            return this.processQueryWithOpenAI(query);
+        } else {
+            throw new Error(`Unsupported provider: ${this.provider}`);
+        }
+    }
+
+    private async processQueryWithAnthropic(query: string): Promise<string> {
+        if (!this.anthropic) {
+            throw new Error('Anthropic client not initialized');
+        }
+
         // Add user message to conversation history
         const userMessage: MessageParam = {
             role: "user",
@@ -109,10 +159,10 @@ class MCPClient {
 
         // Initial Claude API call
         const response = await this.anthropic.messages.create({
-            model: MODEL_NAME,
+            model: ANTHROPIC_MODEL,
             max_tokens: 1000,
             messages,
-            tools: this.tools,
+            tools: this.tools as Tool[],
         });
 
         // Process response and handle tool calls
@@ -153,10 +203,10 @@ class MCPClient {
 
                 // Get next response from Claude with tool results
                 const followupResponse = await this.anthropic.messages.create({
-                    model: MODEL_NAME,
+                    model: ANTHROPIC_MODEL,
                     max_tokens: 1000,
                     messages: [...this.conversationHistory],
-                    tools: this.tools,
+                    tools: this.tools as Tool[],
                 });
 
                 // Process followup response
@@ -172,6 +222,78 @@ class MCPClient {
                     content: followupResponse.content
                 });
             }
+        }
+
+        return assistantResponse;
+    }
+
+    private async processQueryWithOpenAI(query: string): Promise<string> {
+        if (!this.openai) {
+            throw new Error('OpenAI client not initialized');
+        }
+
+        // Add user message to conversation history
+        const userMessage = {
+            role: "user" as const,
+            content: query,
+        };
+        this.conversationHistory.push(userMessage);
+
+        // Initial OpenAI API call
+        const response = await this.openai.chat.completions.create({
+            model: OPENAI_MODEL,
+            max_tokens: 1000,
+            messages: [...this.conversationHistory],
+            tools: this.tools.length > 0 ? this.tools as any[] : undefined,
+        });
+
+        const message = response.choices[0].message;
+        let assistantResponse = message.content || "";
+
+        // Add assistant's response to conversation history
+        this.conversationHistory.push({
+            role: "assistant",
+            content: message.content,
+            tool_calls: message.tool_calls
+        });
+
+        // Handle tool calls if any
+        if (message.tool_calls && message.tool_calls.length > 0) {
+            for (const toolCall of message.tool_calls) {
+                // Execute tool call
+                const toolName = toolCall.function.name;
+                const toolArgs = JSON.parse(toolCall.function.arguments);
+
+                const result = await this.mcp.callTool({
+                    name: toolName,
+                    arguments: toolArgs,
+                });
+
+                // Add tool result to conversation history
+                this.conversationHistory.push({
+                    role: "tool",
+                    content: result.content as string,
+                    tool_call_id: toolCall.id
+                });
+            }
+
+            // Get next response from OpenAI with tool results
+            const followupResponse = await this.openai.chat.completions.create({
+                model: OPENAI_MODEL,
+                max_tokens: 1000,
+                messages: [...this.conversationHistory],
+                tools: this.tools.length > 0 ? this.tools as any[] : undefined,
+            });
+
+            const followupMessage = followupResponse.choices[0].message;
+            assistantResponse = followupMessage.content || "";
+
+            // Add final assistant response to conversation history
+            this.conversationHistory.push({
+                role: "assistant",
+                content: followupMessage.content,
+                tool_calls: followupMessage.tool_calls
+            });
         }
 
         return assistantResponse;
@@ -214,14 +336,18 @@ class MCPClient {
         await this.cleanup();
     }
 
-    getConversationHistory(): MessageParam[] {
+    getConversationHistory(): any[] {
         return [...this.conversationHistory];
+    }
+
+    getProvider(): ModelProvider {
+        return this.provider;
     }
 }
 
 // Session management helper functions
-async function createSession(apiToken: string): Promise<string> {
-    const mcpClient = new MCPClient(apiToken);
+async function createSession(apiToken: string, provider: ModelProvider = 'anthropic'): Promise<string> {
+    const mcpClient = new MCPClient(apiToken, provider);
     
     // Connect to MCP server and get the session ID from server
     const sessionId = await mcpClient.connectToServer();
@@ -230,7 +356,8 @@ async function createSession(apiToken: string): Promise<string> {
         sessionId,
         mcpClient,
         createdAt: new Date(),
-        lastActivity: new Date()
+        lastActivity: new Date(),
+        provider
     };
     
     sessions.set(sessionId, sessionData);
@@ -274,11 +401,13 @@ async function main() {
             activeSessions: sessions.size,
             endpoints: {
                 health: 'GET /mcp-client/health',
-                connect: 'POST /mcp-client/connect (requires Authorization header)',
+                connect: 'POST /mcp-client/connect (requires Authorization header, optional provider: "anthropic" or "openai")',
                 chat: 'POST /mcp-client/chat (requires sessionId)',
                 disconnect: 'POST /mcp-client/disconnect (requires sessionId)',
                 sessions: 'GET /mcp-client/sessions (list active sessions)'
-            }
+            },
+            supportedProviders: ['anthropic', 'openai'],
+            defaultProvider: 'anthropic'
         });
     };
     router.get('/health', healthCheck);
@@ -294,10 +423,14 @@ async function main() {
             }
 
             const apiToken = authHeader.substring(7); // Remove 'Bearer ' prefix
+            
+            // Get provider from request body (default to 'anthropic')
+            const { provider } = req.body || {};
+            const modelProvider: ModelProvider = provider === 'openai' ? 'openai' : 'anthropic';
 
             try {
                 // Create session and connect to MCP server (session ID comes from server)
-                const sessionId = await createSession(apiToken);
+                const sessionId = await createSession(apiToken, modelProvider);
                 const sessionData = getSession(sessionId);
 
                 if (!sessionData) {
@@ -307,8 +440,11 @@ async function main() {
 
                 res.json({
                     sessionId,
-                    message: 'Session created and connected to MCP server',
-                    tools: sessionData.mcpClient.tools.map(t => t.name)
+                    message: `Session created and connected to MCP server using ${modelProvider}`,
+                    provider: modelProvider,
+                    tools: sessionData.mcpClient.tools.map((t: any) => 
+                        modelProvider === 'anthropic' ? t.name : t.function.name
+                    )
                 });
             } catch (error) {
                 console.error('Failed to connect to MCP server:', error);
@@ -402,8 +538,11 @@ async function main() {
             sessionId: session.sessionId,
             createdAt: session.createdAt,
             lastActivity: session.lastActivity,
+            provider: session.provider,
             conversationLength: session.mcpClient.getConversationHistory().length,
-            tools: session.mcpClient.tools.map(t => t.name)
+            tools: session.mcpClient.tools.map((t: any) => 
+                session.provider === 'anthropic' ? t.name : t.function.name
+            )
         }));
 
         res.json({
