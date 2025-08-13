@@ -25,7 +25,7 @@ spec:
         - name: {{ .Values.imagePullSecret.name }}
       {{- end }}
       hostAliases:
-        - ip: 10.11.12.64
+        - ip: 10.11.12.20
           hostnames:
               - ideas.ideascale.me
       containers:
