@@ -14,7 +14,7 @@ pluginManagement {
 }
 
 plugins {
-    id("dev.ideascale.settings") version "1.0.62"
+    id("dev.ideascale.settings") version "1.0.64"
 }
 
 rootProject.name = "mcp-client"

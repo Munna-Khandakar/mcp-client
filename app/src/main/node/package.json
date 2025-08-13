@@ -1,6 +1,6 @@
 {
-  "name": "mcp-client-typescript",
-  "version": "1.0.0",
+  "name": "@ideascale/mcp-client",
+  "version": "0.0.0-local",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",

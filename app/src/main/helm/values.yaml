@@ -4,7 +4,7 @@ imagePullSecret:
   enabled: false
   name: ""
 
-port: 3079
+port: 3077
 nameOverride: ""
 fullnameOverride: ""
 replicaCount: 1
