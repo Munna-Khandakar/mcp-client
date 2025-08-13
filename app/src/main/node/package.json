@@ -4,8 +4,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
-    "start": "node build/index.js"
+    "build": "tsc && node -e \"require('fs').chmodSync('build/src/index.js', '755')\"",
+    "start": "node build/src/index.js"
   },
   "keywords": [],
   "author": "",
