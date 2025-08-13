@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mcp-client.fullname" . }}
+  labels:
+    {{ include "mcp-client.labels" . | nindent 4 }}
+spec:
+  ports:
+    - port: {{.Values.port}}
+      targetPort: {{.Values.port}}
+      name: http
+  selector:
+    {{ include "mcp-client.selectorLabels" . | nindent 4 }}

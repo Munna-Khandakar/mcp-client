@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mcp-client.fullname" . }}
+  labels:
+    {{ include "mcp-client.labels" . | nindent 4 }}
+  annotations:
+      {{ include "mcp-client.ingress-annotations" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+{{- $appFullname := include "mcp-client.fullname" .}}
+{{- $baseDomain := .Values.baseDomain }}
+  tls:
+    - hosts:
+      {{- if eq .Values.ingress.includeBaseDomain true }}
+        - {{ .Values.baseDomain | quote}}
+      {{- end }}
+        - {{ printf "%s.%s" .Values.ingress.domainPrefix .Values.baseDomain | quote }}
+      secretName: {{ .Values.ingress.tlsSecret }}
+  rules:
+    - host: {{ printf "%s.%s" "*" $.Values.baseDomain | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path | quote }}
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ $appFullname }}
+                port:
+                  number: {{.Values.port}}

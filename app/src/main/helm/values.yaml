@@ -1,0 +1,77 @@
+baseDomain: ideascale.com
+
+imagePullSecret:
+  enabled: false
+  name: ""
+
+port: 3079
+nameOverride: ""
+fullnameOverride: ""
+replicaCount: 1
+applicationEnv: ""
+
+image:
+  registry: ${imageRegistry}
+  repository: ${imageRepository}
+  tag: ${imageTag}
+  pullPolicy: IfNotPresent
+
+logging:
+  enabled: false
+
+ingress:
+  path: /mcp-client
+  className: nginx
+  tlsSecret: ideascale.com-tls
+  tlsAcme: false
+  includeBaseDomain: false
+  domainPrefix: '*'
+  extraAnnotations: [ ]
+
+service:
+  exportNodePorts: false
+
+resources:
+  limits: { }
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+affinity: { }
+
+nodeSelector:
+  kubernetes.io/os: linux
+
+tolerations: [ ]
+
+topologySpreadConstraints: [ ]
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  metrics: [ ]
+  scaleTargetRef: { }
+
+livenessProbe:
+  enabled: false
+  initialDelaySeconds: 0
+  failureThreshold: 5
+  periodSeconds: 10
+  timeoutSeconds: 1
+
+readinessProbe:
+  enabled: false
+  initialDelaySeconds: 0
+  failureThreshold: 3
+  periodSeconds: 2
+  timeoutSeconds: 1
+
+startupProbe:
+  enabled: false
+  initialDelaySeconds: 1
+  failureThreshold: 10
+  periodSeconds: 2
+  timeoutSeconds: 1
+
+extraInitContainers: [ ]
