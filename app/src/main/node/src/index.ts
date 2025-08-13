@@ -5,7 +5,7 @@ import {
 } from "@anthropic-ai/sdk/resources/messages/messages.mjs";
 
 import OpenAI from "openai";
-import { Ollama } from "ollama";
+import {Ollama} from "ollama";
 
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -13,16 +13,18 @@ import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/st
 import express, {Router} from "express";
 import type {RequestHandler} from "express";
 import cors from "cors";
+import {TokenUtil} from "./utils/TokenUtil.js";
 
 // Configuration constants - define all values here
 const ANTHROPIC_API_KEY = '';
 const OPENAI_API_KEY = '';
 const OLLAMA_BASE_URL = 'http://localhost:11434'; // Default Ollama endpoint
-const MCP_SERVER_URL = 'http://localhost:3078/mcp';
+const MCP_SERVER_URL = 'https://ideas.ideascale.me/mcp';
 const SERVER_PORT = 3077;
 const ANTHROPIC_MODEL = 'claude-3-5-haiku-latest';
 const OPENAI_MODEL = 'gpt-4o-mini';
 const OLLAMA_MODEL = 'llama3.2:1b'; // Default Ollama model
+const JWT_SECRET = ''
 
 type ModelProvider = 'anthropic' | 'openai' | 'ollama';
 
@@ -52,7 +54,7 @@ class MCPClient {
     constructor(apiToken: string, provider: ModelProvider = 'anthropic') {
         this.apiToken = apiToken;
         this.provider = provider;
-        
+
         // Initialize the appropriate client and MCP client
         if (provider === 'anthropic') {
             this.anthropic = new Anthropic({
@@ -67,7 +69,7 @@ class MCPClient {
                 host: OLLAMA_BASE_URL,
             });
         }
-        
+
         this.mcp = new Client({name: "mcp-client-http", version: "1.0.0"});
     }
 
@@ -83,7 +85,7 @@ class MCPClient {
 
             // Connect to server
             await this.mcp.connect(this.transport);
-            
+
             // Get session ID from transport's Mcp-Session-Id header after successful connection
             // The StreamableHTTPClientTransport should extract this from the server's response header
             this.sessionId = (this.transport as any)?.sessionId || null;
@@ -96,7 +98,7 @@ class MCPClient {
 
             // List available tools
             const toolsResult = await this.mcp.listTools();
-            
+
             // Convert MCP tools to format compatible with Anthropic, OpenAI, and Ollama
             if (this.provider === 'anthropic') {
                 this.tools = toolsResult.tools.map((tool) => {
@@ -119,10 +121,10 @@ class MCPClient {
                     };
                 }) as any[];
             }
-            
+
             console.log(
                 `Connected to MCP server with session ID: ${this.sessionId}`,
-                "Tools:", this.tools.map((tool: any) => 
+                "Tools:", this.tools.map((tool: any) =>
                     this.provider === 'anthropic' ? tool.name : tool.function.name
                 )
             );
@@ -177,18 +179,18 @@ class MCPClient {
 
         // Process response and handle tool calls
         let assistantResponse = "";
-        
+
         // First, add the assistant's response (including any tool_use) to conversation history
         this.conversationHistory.push({
             role: "assistant",
             content: response.content
         });
-        
+
         for (const content of response.content) {
             if (content.type === "text") {
                 assistantResponse += content.text;
             } else if (content.type === "tool_use") {
-                
+
                 // Execute tool call
                 const toolName = content.name;
                 const toolArgs = content.input as { [x: string]: unknown } | undefined;
@@ -200,7 +202,7 @@ class MCPClient {
 
                 // Add tool result to conversation history (user role with tool_result)
                 const toolResultMessage: MessageParam = {
-                    role: "user", 
+                    role: "user",
                     content: [
                         {
                             type: "tool_result",
@@ -225,7 +227,7 @@ class MCPClient {
                         assistantResponse += followupContent.text;
                     }
                 }
-                
+
                 // Add final assistant response to conversation history
                 this.conversationHistory.push({
                     role: "assistant",
@@ -343,7 +345,7 @@ class MCPClient {
             for (const toolCall of message.tool_calls) {
                 // Execute tool call
                 const toolName = toolCall.function.name;
-                const toolArgs = typeof toolCall.function.arguments === 'string' ? 
+                const toolArgs = typeof toolCall.function.arguments === 'string' ?
                     JSON.parse(toolCall.function.arguments) : toolCall.function.arguments;
 
                 const result = await this.mcp.callTool({
@@ -413,7 +415,7 @@ class MCPClient {
                 console.error(`Error terminating session ${this.sessionId}:`, error);
             }
         }
-        
+
         await this.cleanup();
     }
 
@@ -429,10 +431,10 @@ class MCPClient {
 // Session management helper functions
 async function createSession(apiToken: string, provider: ModelProvider = 'anthropic'): Promise<string> {
     const mcpClient = new MCPClient(apiToken, provider);
-    
+
     // Connect to MCP server and get the session ID from server
     const sessionId = await mcpClient.connectToServer();
-    
+
     const sessionData: SessionData = {
         sessionId,
         mcpClient,
@@ -440,7 +442,7 @@ async function createSession(apiToken: string, provider: ModelProvider = 'anthro
         lastActivity: new Date(),
         provider
     };
-    
+
     sessions.set(sessionId, sessionData);
     return sessionId;
 }
@@ -496,20 +498,22 @@ async function main() {
     // Connect endpoint - creates a new persistent session
     const connectHandler: RequestHandler = async (req, res) => {
         try {
-            // Get API token from Authorization header
             const authHeader = req.headers.authorization;
             if (!authHeader || !authHeader.startsWith('Bearer ')) {
                 res.status(401).json({error: 'Authorization header with Bearer token is required'});
                 return;
             }
 
-            const apiToken = authHeader.substring(7); // Remove 'Bearer ' prefix
-            
-            // Get provider from request body (default to 'anthropic')
-            const { provider } = req.body || {};
-            const modelProvider: ModelProvider = 
-                provider === 'openai' ? 'openai' : 
-                provider === 'ollama' ? 'ollama' : 'anthropic';
+            const bearerToken = authHeader.substring(7);
+
+            const apiToken = await TokenUtil.getApiTokenForMCP(bearerToken, JWT_SECRET);
+
+
+            const {provider} = req.body || {};
+
+            const modelProvider: ModelProvider =
+                provider === 'openai' ? 'openai' :
+                    provider === 'ollama' ? 'ollama' : 'anthropic';
 
             try {
                 // Create session and connect to MCP server (session ID comes from server)
@@ -525,7 +529,7 @@ async function main() {
                     sessionId,
                     message: `Session created and connected to MCP server using ${modelProvider}`,
                     provider: modelProvider,
-                    tools: sessionData.mcpClient.tools.map((t: any) => 
+                    tools: sessionData.mcpClient.tools.map((t: any) =>
                         modelProvider === 'anthropic' ? t.name : t.function.name
                     )
                 });
@@ -623,7 +627,7 @@ async function main() {
             lastActivity: session.lastActivity,
             provider: session.provider,
             conversationLength: session.mcpClient.getConversationHistory().length,
-            tools: session.mcpClient.tools.map((t: any) => 
+            tools: session.mcpClient.tools.map((t: any) =>
                 session.provider === 'anthropic' ? t.name : t.function.name
             )
         }));
