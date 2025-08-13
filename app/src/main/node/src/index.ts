@@ -5,6 +5,7 @@ import {
 } from "@anthropic-ai/sdk/resources/messages/messages.mjs";
 
 import OpenAI from "openai";
+import { Ollama } from "ollama";
 
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -16,12 +17,14 @@ import cors from "cors";
 // Configuration constants - define all values here
 const ANTHROPIC_API_KEY = '';
 const OPENAI_API_KEY = '';
+const OLLAMA_BASE_URL = 'http://localhost:11434'; // Default Ollama endpoint
 const MCP_SERVER_URL = 'http://localhost:3078/mcp';
 const SERVER_PORT = 3077;
 const ANTHROPIC_MODEL = 'claude-3-5-haiku-latest';
 const OPENAI_MODEL = 'gpt-4o-mini';
+const OLLAMA_MODEL = 'llama3.2:1b'; // Default Ollama model
 
-type ModelProvider = 'anthropic' | 'openai';
+type ModelProvider = 'anthropic' | 'openai' | 'ollama';
 
 interface SessionData {
     sessionId: string;
@@ -38,6 +41,7 @@ class MCPClient {
     private mcp: Client;
     private anthropic: Anthropic | null = null;
     private openai: OpenAI | null = null;
+    private ollama: Ollama | null = null;
     private transport: StreamableHTTPClientTransport | null = null;
     public tools: Tool[] = [];
     private apiToken: string;
@@ -57,6 +61,10 @@ class MCPClient {
         } else if (provider === 'openai') {
             this.openai = new OpenAI({
                 apiKey: OPENAI_API_KEY,
+            });
+        } else if (provider === 'ollama') {
+            this.ollama = new Ollama({
+                host: OLLAMA_BASE_URL,
             });
         }
         
@@ -89,7 +97,7 @@ class MCPClient {
             // List available tools
             const toolsResult = await this.mcp.listTools();
             
-            // Convert MCP tools to format compatible with both Anthropic and OpenAI
+            // Convert MCP tools to format compatible with Anthropic, OpenAI, and Ollama
             if (this.provider === 'anthropic') {
                 this.tools = toolsResult.tools.map((tool) => {
                     return {
@@ -98,8 +106,8 @@ class MCPClient {
                         input_schema: tool.inputSchema,
                     };
                 });
-            } else if (this.provider === 'openai') {
-                // OpenAI uses a different tool format
+            } else if (this.provider === 'openai' || this.provider === 'ollama') {
+                // OpenAI and Ollama both use the same tool format
                 this.tools = toolsResult.tools.map((tool) => {
                     return {
                         type: "function",
@@ -137,6 +145,8 @@ class MCPClient {
             return this.processQueryWithAnthropic(query);
         } else if (this.provider === 'openai') {
             return this.processQueryWithOpenAI(query);
+        } else if (this.provider === 'ollama') {
+            return this.processQueryWithOllama(query);
         } else {
             throw new Error(`Unsupported provider: ${this.provider}`);
         }
@@ -299,6 +309,77 @@ class MCPClient {
         return assistantResponse;
     }
 
+    private async processQueryWithOllama(query: string): Promise<string> {
+        if (!this.ollama) {
+            throw new Error('Ollama client not initialized');
+        }
+
+        // Add user message to conversation history
+        const userMessage = {
+            role: "user" as const,
+            content: query,
+        };
+        this.conversationHistory.push(userMessage);
+
+        // Initial Ollama API call
+        const response = await this.ollama.chat({
+            model: OLLAMA_MODEL,
+            messages: [...this.conversationHistory],
+            tools: this.tools.length > 0 ? this.tools as any[] : undefined,
+        });
+
+        const message = response.message;
+        let assistantResponse = message.content || "";
+
+        // Add assistant's response to conversation history
+        this.conversationHistory.push({
+            role: "assistant",
+            content: message.content,
+            tool_calls: message.tool_calls
+        });
+
+        // Handle tool calls if any
+        if (message.tool_calls && message.tool_calls.length > 0) {
+            for (const toolCall of message.tool_calls) {
+                // Execute tool call
+                const toolName = toolCall.function.name;
+                const toolArgs = typeof toolCall.function.arguments === 'string' ? 
+                    JSON.parse(toolCall.function.arguments) : toolCall.function.arguments;
+
+                const result = await this.mcp.callTool({
+                    name: toolName,
+                    arguments: toolArgs,
+                });
+
+                // Add tool result to conversation history
+                this.conversationHistory.push({
+                    role: "tool",
+                    content: result.content as string,
+                    tool_call_id: (toolCall as any).id || toolCall.function.name
+                });
+            }
+
+            // Get next response from Ollama with tool results
+            const followupResponse = await this.ollama.chat({
+                model: OLLAMA_MODEL,
+                messages: [...this.conversationHistory],
+                tools: this.tools.length > 0 ? this.tools as any[] : undefined,
+            });
+
+            const followupMessage = followupResponse.message;
+            assistantResponse = followupMessage.content || "";
+
+            // Add final assistant response to conversation history
+            this.conversationHistory.push({
+                role: "assistant",
+                content: followupMessage.content,
+                tool_calls: followupMessage.tool_calls
+            });
+        }
+
+        return assistantResponse;
+    }
+
     async cleanup() {
         /**
          * Clean up resources and optionally send DELETE to terminate session
@@ -401,12 +482,12 @@ async function main() {
             activeSessions: sessions.size,
             endpoints: {
                 health: 'GET /mcp-client/health',
-                connect: 'POST /mcp-client/connect (requires Authorization header, optional provider: "anthropic" or "openai")',
+                connect: 'POST /mcp-client/connect (requires Authorization header, optional provider: "anthropic", "openai", or "ollama")',
                 chat: 'POST /mcp-client/chat (requires sessionId)',
                 disconnect: 'POST /mcp-client/disconnect (requires sessionId)',
                 sessions: 'GET /mcp-client/sessions (list active sessions)'
             },
-            supportedProviders: ['anthropic', 'openai'],
+            supportedProviders: ['anthropic', 'openai', 'ollama'],
             defaultProvider: 'anthropic'
         });
     };
@@ -426,7 +507,9 @@ async function main() {
             
             // Get provider from request body (default to 'anthropic')
             const { provider } = req.body || {};
-            const modelProvider: ModelProvider = provider === 'openai' ? 'openai' : 'anthropic';
+            const modelProvider: ModelProvider = 
+                provider === 'openai' ? 'openai' : 
+                provider === 'ollama' ? 'ollama' : 'anthropic';
 
             try {
                 // Create session and connect to MCP server (session ID comes from server)
