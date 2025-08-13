@@ -4,6 +4,7 @@ plugins {
 }
 
 allprojects {
+
     group = "com.ideascale.mcp.client"
 }
 

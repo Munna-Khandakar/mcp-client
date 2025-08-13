@@ -4,4 +4,4 @@ services:
     image: ideascale/mcp-client:0.0.0-local
     container_name: mcp-client
     ports:
-      - "3079:3079"
+      - "3077:3077"

@@ -14,7 +14,7 @@ import cors from "cors";
 // Configuration constants - define all values here
 const ANTHROPIC_API_KEY = '';
 const MCP_SERVER_URL = 'http://localhost:3078/mcp';
-const SERVER_PORT = 3000;
+const SERVER_PORT = 3077;
 
 interface SessionData {
     sessionId: string;
