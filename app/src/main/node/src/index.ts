@@ -13,8 +13,9 @@ import cors from "cors";
 
 // Configuration constants - define all values here
 const ANTHROPIC_API_KEY = '';
-const MCP_SERVER_URL = 'http://localhost:3077/mcp-client';
+const MCP_SERVER_URL = 'http://localhost:3078/mcp';
 const SERVER_PORT = 3077;
+const MODEL_NAME = 'claude-3-5-haiku-latest'
 
 interface SessionData {
     sessionId: string;
@@ -81,7 +82,7 @@ class MCPClient {
                 `Connected to MCP server with session ID: ${this.sessionId}`,
                 "Tools:", this.tools.map(({name}) => name)
             );
-            
+
             return this.sessionId || "no-session";
         } catch (e) {
             console.log("Failed to connect to MCP server: ", e);
@@ -108,7 +109,7 @@ class MCPClient {
 
         // Initial Claude API call
         const response = await this.anthropic.messages.create({
-            model: "claude-3-5-sonnet-20241022",
+            model: MODEL_NAME,
             max_tokens: 1000,
             messages,
             tools: this.tools,
@@ -152,7 +153,7 @@ class MCPClient {
 
                 // Get next response from Claude with tool results
                 const followupResponse = await this.anthropic.messages.create({
-                    model: "claude-3-5-sonnet-20241022",
+                    model: MODEL_NAME,
                     max_tokens: 1000,
                     messages: [...this.conversationHistory],
                     tools: this.tools,
@@ -268,7 +269,7 @@ async function main() {
     // Health check endpoint
     const healthCheck: RequestHandler = (_req, res) => {
         res.json({
-            status: 'ok', 
+            status: 'ok',
             message: 'MCP client server is running',
             activeSessions: sessions.size,
             endpoints: {
@@ -291,14 +292,14 @@ async function main() {
                 res.status(401).json({error: 'Authorization header with Bearer token is required'});
                 return;
             }
-            
+
             const apiToken = authHeader.substring(7); // Remove 'Bearer ' prefix
-            
+
             try {
                 // Create session and connect to MCP server (session ID comes from server)
                 const sessionId = await createSession(apiToken);
                 const sessionData = getSession(sessionId);
-                
+
                 if (!sessionData) {
                     res.status(500).json({error: 'Failed to create session'});
                     return;
@@ -339,7 +340,7 @@ async function main() {
                 res.status(404).json({error: 'Session not found or expired. Please connect again using /connect endpoint'});
                 return;
             }
-            
+
             try {
                 const response = await sessionData.mcpClient.processQuery(query);
                 res.json({
