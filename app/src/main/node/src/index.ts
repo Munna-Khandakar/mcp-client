@@ -252,7 +252,7 @@ class MCPClient {
         // Initial OpenAI API call
         const response = await this.openai.chat.completions.create({
             model: OPENAI_MODEL,
-            max_tokens: 1000,
+            max_completion_tokens: 1000,
             messages: [...this.conversationHistory],
             tools: this.tools.length > 0 ? this.tools as any[] : undefined,
         });
@@ -290,7 +290,7 @@ class MCPClient {
             // Get next response from OpenAI with tool results
             const followupResponse = await this.openai.chat.completions.create({
                 model: OPENAI_MODEL,
-                max_tokens: 1000,
+                max_completion_tokens: 1000,
                 messages: [...this.conversationHistory],
                 tools: this.tools.length > 0 ? this.tools as any[] : undefined,
             });
