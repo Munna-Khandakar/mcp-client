@@ -7,13 +7,13 @@ import {
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-import express from "express";
+import express, {Router} from "express";
 import type {RequestHandler} from "express";
 import cors from "cors";
 
 // Configuration constants - define all values here
 const ANTHROPIC_API_KEY = '';
-const MCP_SERVER_URL = 'http://localhost:3078/mcp';
+const MCP_SERVER_URL = 'http://localhost:3077/mcp-client';
 const SERVER_PORT = 3077;
 
 interface SessionData {
@@ -259,6 +259,7 @@ async function removeSession(sessionId: string): Promise<void> {
 
 async function main() {
     const app = express();
+    const router = Router();
 
     // Middleware
     app.use(cors());
@@ -271,15 +272,15 @@ async function main() {
             message: 'MCP client server is running',
             activeSessions: sessions.size,
             endpoints: {
-                health: 'GET /health',
-                connect: 'POST /connect (requires Authorization header)',
-                chat: 'POST /chat (requires sessionId)',
-                disconnect: 'POST /disconnect (requires sessionId)',
-                sessions: 'GET /sessions (list active sessions)'
+                health: 'GET /mcp-client/health',
+                connect: 'POST /mcp-client/connect (requires Authorization header)',
+                chat: 'POST /mcp-client/chat (requires sessionId)',
+                disconnect: 'POST /mcp-client/disconnect (requires sessionId)',
+                sessions: 'GET /mcp-client/sessions (list active sessions)'
             }
         });
     };
-    app.get('/health', healthCheck);
+    router.get('/health', healthCheck);
 
     // Connect endpoint - creates a new persistent session
     const connectHandler: RequestHandler = async (req, res) => {
@@ -317,7 +318,7 @@ async function main() {
             res.status(500).json({error: 'Failed to create session'});
         }
     };
-    app.post('/connect', connectHandler);
+    router.post('/connect', connectHandler);
 
     // Chat endpoint - uses existing session
     const chatHandler: RequestHandler = async (req, res) => {
@@ -365,7 +366,7 @@ async function main() {
             res.status(500).json({error: 'Failed to process chat request'});
         }
     };
-    app.post('/chat', chatHandler);
+    router.post('/chat', chatHandler);
 
     // Disconnect endpoint - removes session
     const disconnectHandler: RequestHandler = async (req, res) => {
@@ -392,7 +393,7 @@ async function main() {
             res.status(500).json({error: 'Failed to disconnect session'});
         }
     };
-    app.post('/disconnect', disconnectHandler);
+    router.post('/disconnect', disconnectHandler);
 
     // Sessions endpoint - list active sessions
     const sessionsHandler: RequestHandler = (_req, res) => {
@@ -409,15 +410,18 @@ async function main() {
             sessions: sessionList
         });
     };
-    app.get('/sessions', sessionsHandler);
+    router.get('/sessions', sessionsHandler);
+
+    // Mount router with /mcp-client prefix
+    app.use('/mcp-client', router);
 
     app.listen(SERVER_PORT, () => {
         console.log(`\n🚀 MCP Client Server running on port ${SERVER_PORT}`);
-        console.log(`📋 Health check: http://localhost:${SERVER_PORT}/health`);
-        console.log(`🔗 Connect: POST http://localhost:${SERVER_PORT}/connect`);
-        console.log(`💬 Chat: POST http://localhost:${SERVER_PORT}/chat`);
-        console.log(`🔌 Disconnect: POST http://localhost:${SERVER_PORT}/disconnect`);
-        console.log(`📊 Sessions: GET http://localhost:${SERVER_PORT}/sessions`);
+        console.log(`📋 Health check: http://localhost:${SERVER_PORT}/mcp-client/health`);
+        console.log(`🔗 Connect: POST http://localhost:${SERVER_PORT}/mcp-client/connect`);
+        console.log(`💬 Chat: POST http://localhost:${SERVER_PORT}/mcp-client/chat`);
+        console.log(`🔌 Disconnect: POST http://localhost:${SERVER_PORT}/mcp-client/disconnect`);
+        console.log(`📊 Sessions: GET http://localhost:${SERVER_PORT}/mcp-client/sessions`);
         console.log(`🔧 MCP server URL: ${MCP_SERVER_URL}`);
         console.log(`✨ Server ready with persistent session management and conversation context!`);
     });
