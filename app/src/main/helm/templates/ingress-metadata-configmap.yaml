@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mcp-client.fullname" . }}-ingress-metadata
+  labels:
+    app.ideascale.com/ingress-metadata: "true"
+    {{ include "mcp-client.labels" . | nindent 4 }}
+data:
+  annotations: |-
+    {{ include "mcp-client.ingress-annotations" . | nindent 4 }}
+  className: '{{ .Values.ingress.className }}'
+  name: '{{ include "mcp-client.fullname" . }}'
+  path: '{{ .Values.ingress.path }}'
+  pathType: 'ImplementationSpecific'
+  serviceName: '{{ include "mcp-client.fullname" . }}'
+  servicePort: '{{ .Values.port }}'

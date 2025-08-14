@@ -1,0 +1,11 @@
+{{- if .Values.applicationEnv }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mcp-client.configmap" . }}
+  labels:
+    {{- include "mcp-client.labels" . | nindent 4 }}
+data:
+  .env: |-
+    {{- .Values.applicationEnv | nindent 4 }}
+{{- end }}

@@ -1,3 +1,9 @@
 /build
 /node_modules
 .env
+/app/build/
+/localdev/build/
+/.idea/
+/.gradle/
+/app/src/main/node/node_modules/
+/app/src/main/node/dist/
