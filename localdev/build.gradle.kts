@@ -11,6 +11,7 @@ helm {
         create("mcp-client") {
             from(chart(project = ":app"))
             installDependsOn(":app:publish")
+            fileValues.put("applicationEnv", layout.buildDirectory.file("config/properties/mcp-client.env"))
         }
     }
 }
