@@ -18,12 +18,12 @@ import {TokenUtil} from "./utils/TokenUtil.js";
 // Configuration constants - define all values here
 const ANTHROPIC_API_KEY = '';
 const OPENAI_API_KEY = '';
-const OLLAMA_BASE_URL = 'http://localhost:11434'; // Default Ollama endpoint
+const OLLAMA_BASE_URL = 'http://localhost:11435'; // Default Ollama endpoint
 const MCP_SERVER_URL = 'https://ideas.ideascale.me/mcp';
 const SERVER_PORT = 3077;
 const ANTHROPIC_MODEL = 'claude-3-5-haiku-latest';
 const OPENAI_MODEL = 'gpt-4o-mini';
-const OLLAMA_MODEL = 'llama3.2:1b'; // Default Ollama model
+const OLLAMA_MODEL = 'llama3.1:8b'; // Default Ollama model
 const JWT_SECRET = ''
 
 type ModelProvider = 'anthropic' | 'openai' | 'ollama';
@@ -251,11 +251,18 @@ class MCPClient {
         };
         this.conversationHistory.push(userMessage);
 
+        // Convert conversation history to OpenAI format (content must be string)
+        const openaiMessages = this.conversationHistory.map(msg => ({
+            ...msg,
+            content: typeof msg.content === 'string' ? msg.content : 
+                     Array.isArray(msg.content) ? JSON.stringify(msg.content) : String(msg.content)
+        }));
+
         // Initial OpenAI API call
         const response = await this.openai.chat.completions.create({
             model: OPENAI_MODEL,
             max_completion_tokens: 1000,
-            messages: [...this.conversationHistory],
+            messages: openaiMessages,
             tools: this.tools.length > 0 ? this.tools as any[] : undefined,
         });
 
@@ -290,13 +297,19 @@ class MCPClient {
             }
 
             // Get next response from OpenAI with tool results
+            const updatedOpenaiMessages = this.conversationHistory.map(msg => ({
+                ...msg,
+                content: typeof msg.content === 'string' ? msg.content : 
+                         Array.isArray(msg.content) ? JSON.stringify(msg.content) : String(msg.content)
+            }));
+            
             const followupResponse = await this.openai.chat.completions.create({
                 model: OPENAI_MODEL,
                 max_completion_tokens: 1000,
-                messages: [...this.conversationHistory],
+                messages: updatedOpenaiMessages,
                 tools: this.tools.length > 0 ? this.tools as any[] : undefined,
             });
-
+            console.log('2. Followup OpenAI response:', followupResponse);
             const followupMessage = followupResponse.choices[0].message;
             assistantResponse = followupMessage.content || "";
 
@@ -307,7 +320,7 @@ class MCPClient {
                 tool_calls: followupMessage.tool_calls
             });
         }
-
+        console.log("3. Final assistant response:", assistantResponse);
         return assistantResponse;
     }
 
@@ -323,12 +336,21 @@ class MCPClient {
         };
         this.conversationHistory.push(userMessage);
 
+        // Convert conversation history to Ollama format (content must be string)
+        const ollamaMessages = this.conversationHistory.map(msg => ({
+            ...msg,
+            content: typeof msg.content === 'string' ? msg.content : 
+                     Array.isArray(msg.content) ? JSON.stringify(msg.content) : String(msg.content)
+        }));
+
         // Initial Ollama API call
         const response = await this.ollama.chat({
             model: OLLAMA_MODEL,
-            messages: [...this.conversationHistory],
+            messages: ollamaMessages,
             tools: this.tools.length > 0 ? this.tools as any[] : undefined,
         });
+
+        console.log('1. Ollama response:', response);
 
         const message = response.message;
         let assistantResponse = message.content || "";
@@ -346,7 +368,7 @@ class MCPClient {
                 // Execute tool call
                 const toolName = toolCall.function.name;
                 const toolArgs = typeof toolCall.function.arguments === 'string' ?
-                    JSON.parse(toolCall.function.arguments) : toolCall.function.arguments;
+                    JSON.parse(toolCall.function.arguments) : toolCall.function.arguments || {};
 
                 const result = await this.mcp.callTool({
                     name: toolName,
@@ -362,9 +384,15 @@ class MCPClient {
             }
 
             // Get next response from Ollama with tool results
+            const updatedOllamaMessages = this.conversationHistory.map(msg => ({
+                ...msg,
+                content: typeof msg.content === 'string' ? msg.content : 
+                         Array.isArray(msg.content) ? JSON.stringify(msg.content) : String(msg.content)
+            }));
+            
             const followupResponse = await this.ollama.chat({
                 model: OLLAMA_MODEL,
-                messages: [...this.conversationHistory],
+                messages: updatedOllamaMessages,
                 tools: this.tools.length > 0 ? this.tools as any[] : undefined,
             });
 
@@ -498,15 +526,15 @@ async function main() {
     // Connect endpoint - creates a new persistent session
     const connectHandler: RequestHandler = async (req, res) => {
         try {
-            const authHeader = req.headers.authorization;
-            if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                res.status(401).json({error: 'Authorization header with Bearer token is required'});
-                return;
-            }
+            // const authHeader = req.headers.authorization;
+            // if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            //     res.status(401).json({error: 'Authorization header with Bearer token is required'});
+            //     return;
+            // }
+            //
+            // const bearerToken = authHeader.substring(7);
 
-            const bearerToken = authHeader.substring(7);
-
-            const apiToken = await TokenUtil.getApiTokenForMCP(bearerToken, JWT_SECRET);
+            const apiToken = '35314f20-e476-4e06-b0a4-55876acd3d8f' // await TokenUtil.getApiTokenForMCP(bearerToken, JWT_SECRET);
 
 
             const {provider} = req.body || {};
