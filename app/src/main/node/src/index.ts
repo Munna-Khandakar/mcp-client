@@ -526,15 +526,15 @@ async function main() {
     // Connect endpoint - creates a new persistent session
     const connectHandler: RequestHandler = async (req, res) => {
         try {
-            // const authHeader = req.headers.authorization;
-            // if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            //     res.status(401).json({error: 'Authorization header with Bearer token is required'});
-            //     return;
-            // }
-            //
-            // const bearerToken = authHeader.substring(7);
+            const authHeader = req.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                res.status(401).json({error: 'Authorization header with Bearer token is required'});
+                return;
+            }
 
-            const apiToken = '35314f20-e476-4e06-b0a4-55876acd3d8f' // await TokenUtil.getApiTokenForMCP(bearerToken, JWT_SECRET);
+            const bearerToken = authHeader.substring(7);
+
+            const apiToken =  await TokenUtil.getApiTokenForMCP(bearerToken, JWT_SECRET);
 
 
             const {provider} = req.body || {};
